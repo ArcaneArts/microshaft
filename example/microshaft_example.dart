@@ -10,7 +10,10 @@ void main() {
     // THE MOJANG TOKEN
     value.mojangToken;
 
-    // THE USERNAME
-    value.username;
+    // THE MINECRAFT USERNAME
+    value.profileName;
+
+    // THE REAL UUID
+    value.uuid;
   });
 }

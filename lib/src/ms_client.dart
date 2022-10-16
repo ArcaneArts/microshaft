@@ -1,15 +1,20 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:microshaft/microshaft.dart';
 import 'package:microshaft/src/model/in_auth_xl.dart';
 import 'package:microshaft/src/model/in_auth_xsts.dart';
-import 'package:microshaft/src/model/ms/in_device_code.dart';
-import 'package:microshaft/src/model/ms/in_device_error.dart';
-import 'package:microshaft/src/model/ms/in_device_success.dart';
+import 'package:microshaft/src/model/in_mojang.dart';
+import 'package:microshaft/src/model/in_device_code.dart';
+import 'package:microshaft/src/model/in_device_error.dart';
+import 'package:microshaft/src/model/in_device_success.dart';
 import 'package:microshaft/src/model/out_auth_xl.dart';
 import 'package:microshaft/src/model/out_auth_xl_properties.dart';
 import 'package:microshaft/src/model/out_auth_xsts.dart';
 import 'package:microshaft/src/model/out_auth_xsts_properties.dart';
+import 'package:microshaft/src/model/out_mojang.dart';
+import 'package:microshaft/src/model/shafted.dart';
 
 const String _clientID = "cf95d5d7-7830-4ad4-a70e-d54e50e80b40";
 
@@ -19,8 +24,67 @@ class MicroshaftClient {
 
   MicroshaftClient({required this.storage, this.clientId = _clientID});
 
-  Future<InDeviceSuccess?> authenticate(CodeDisplayer displayer) =>
-      _Net.authenticate(displayer, clientId);
+  Future<Shafted> authenticate(CodeDisplayer displayer) async {
+    storage.update();
+    Shafted s = Shafted();
+    String authToken = await storage.compute("auth.token", () async {
+      InDeviceSuccess s = (await _Net.authenticate(displayer, clientId))!;
+      storage.setExpiring("auth.token", s.expiresInSeconds!);
+      return s.accessToken!;
+    });
+    s.microsoftAccessToken = authToken;
+    String xblToken = await storage.compute("auth.xbltoken", () async {
+      InAuthXL s = await _Net.authenticateXBL(authToken);
+      storage.setExpiring(
+          "auth.xbltoken", int.tryParse(storage.get("auth.token.expires")!)!);
+      return s.token!;
+    });
+    s.xblToken = xblToken;
+    String xstsToken = await storage.compute("auth.xststoken", () async {
+      InAuthXSTS s = await _Net.authenticateXSTS(xblToken, bedrock: false);
+      storage.setExpiring(
+          "auth.xststoken", int.tryParse(storage.get("auth.token.expires")!)!);
+      storage.set("auth.uhs", s.getUserHash()!);
+      return s.token!;
+    });
+    s.xstsToken = xstsToken;
+    s.userHash = storage.get("auth.uhs")!;
+
+    String mojangToken = await storage.compute("auth.mojangtoken", () async {
+      InMojang im = await _Net.authenticateMojang(
+          xstsToken: xstsToken, userHash: storage.get("auth.uhs")!);
+      storage.setExpiring("auth.mojangtoken", im.expiresIn!);
+      storage.set("mojang.username", im.username!);
+      return im.accessToken!;
+    });
+    s.mojangToken = mojangToken;
+    s.username = storage.get("mojang.username");
+
+    return s;
+  }
+}
+
+class FileStorage extends MemoryStorage {
+  String? _path;
+
+  FileStorage._();
+
+  static FileStorage load(String path) {
+    FileStorage f = FileStorage._();
+    f._path = path;
+    File(path).readAsStringSync().split("\n").forEach((element) {
+      if (element.contains("=")) {
+        List<String> ff = element.split("=");
+        f.set(ff[0], ff[1]);
+      }
+    });
+
+    return f;
+  }
+
+  @override
+  Future<void> flush() => File(_path!).writeAsString(
+      _storage.entries.map((e) => "${e.key}=${e.value}").join("\n"));
 }
 
 class MemoryStorage extends MicroshaftStorage {
@@ -31,12 +95,77 @@ class MemoryStorage extends MicroshaftStorage {
 
   @override
   void set(String key, String value) => _storage[key] = value;
+
+  @override
+  bool containsKey(String key) => _storage.containsKey(key);
+
+  @override
+  Future<void> flush() async {
+    // We don't do that here
+  }
+
+  @override
+  List<String> keys() => _storage.keys.toList(growable: false);
+
+  @override
+  void remove(String key) => _storage.remove(key);
 }
+
+class ExpiringToken {}
+
+typedef Computer = Future<String> Function();
 
 abstract class MicroshaftStorage {
   String? get(String key, [String? or]);
 
   void set(String key, String value);
+
+  Future<String> compute(String key, Computer computer,
+      {bool save = true}) async {
+    if (containsKey(key)) {
+      return Future.value(get(key)!);
+    }
+
+    String s = await computer();
+
+    if (save) {
+      set(key, s);
+    }
+
+    return s;
+  }
+
+  List<String> keys();
+
+  bool containsKey(String key);
+
+  void remove(String key);
+
+  void setExpiring(String key, int secondsUntil) => set(
+      "$key.expires",
+      (DateTime.now().millisecondsSinceEpoch + (secondsUntil * 1000))
+          .toString());
+
+  void update() {
+    for (String i in keys().toList(growable: false)) {
+      if (i.endsWith(".expires")) {
+        continue;
+      }
+
+      if (containsKey("$i.expires")) {
+        int? on = int.tryParse(get("$i.expires")!);
+
+        if (on != null &&
+            on > 0 &&
+            DateTime.now().millisecondsSinceEpoch > on) {
+          remove(i);
+          remove("$i.expires");
+        }
+      }
+    }
+  }
+
+  Future<void> flush();
 }
 
 typedef CodeDisplayer = void Function(String url, String code);
@@ -93,6 +222,20 @@ class _Net {
                       rpsTicket: "d=$accessToken"))
               .toJson()))
       .then((value) => InAuthXL.fromJson(jsonDecode(value.body)));
+
+  static Future<InMojang> authenticateMojang(
+          {required String userHash, required String xstsToken}) =>
+      http
+          .post(
+              Uri.parse(
+                  'https://api.minecraftservices.com/authentication/login_with_xbox'),
+              headers: <String, String>{
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              },
+              body: jsonEncode(
+                  OutMojang(identityToken: "XBL3.0 x=$userHash;$xstsToken")))
+          .then((value) => InMojang.fromJson(jsonDecode(value.body)));
 
   static Future<InAuthXSTS> authenticateXSTS(String xblToken,
           {bool bedrock = false}) =>
@@ -154,7 +297,6 @@ class _Net {
           return InDeviceError.fromJson(jsonDecode(value.body));
         }
 
-        print("Success? ${value.body}");
         return InDeviceSuccess.fromJson(jsonDecode(value.body));
       });
 

@@ -4,8 +4,6 @@ import 'package:test/test.dart';
 
 void main() async {
   group('A group of tests', () {
-    final awesome = Awesome();
-
     setUp(() {
       // Additional setup goes here.
     });
@@ -14,14 +12,8 @@ void main() async {
       MicroshaftClient client = MicroshaftClient(storage: MemoryStorage());
       await client.authenticate((url, code) {
         print("Go to $url");
-        print("Enter Code: $code");
-      }).then((value) {
-        if (value != null) {
-          print("Credentials: ${value.toJson()}");
-        } else {
-          print("Authentication Failure");
-        }
-      });
+        print("Enter: $code");
+      }).then((value) => print(value.toJson().toString()));
     });
   }, timeout: Timeout(Duration(minutes: 5)));
 }

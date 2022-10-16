@@ -12,7 +12,9 @@ Shafted _$ShaftedFromJson(Map<String, dynamic> json) => Shafted()
   ..xstsToken = json['xstsToken'] as String?
   ..mojangToken = json['mojangToken'] as String?
   ..username = json['username'] as String?
-  ..userHash = json['userHash'] as String?;
+  ..userHash = json['userHash'] as String?
+  ..uuid = json['uuid'] as String?
+  ..profileName = json['profileName'] as String?;
 
 Map<String, dynamic> _$ShaftedToJson(Shafted instance) => <String, dynamic>{
       'microsoftAccessToken': instance.microsoftAccessToken,
@@ -21,4 +23,6 @@ Map<String, dynamic> _$ShaftedToJson(Shafted instance) => <String, dynamic>{
       'mojangToken': instance.mojangToken,
       'username': instance.username,
       'userHash': instance.userHash,
+      'uuid': instance.uuid,
+      'profileName': instance.profileName,
     };

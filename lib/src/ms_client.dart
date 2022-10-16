@@ -9,6 +9,7 @@ import 'package:microshaft/src/model/in_mojang.dart';
 import 'package:microshaft/src/model/in_device_code.dart';
 import 'package:microshaft/src/model/in_device_error.dart';
 import 'package:microshaft/src/model/in_device_success.dart';
+import 'package:microshaft/src/model/in_profile.dart';
 import 'package:microshaft/src/model/out_auth_xl.dart';
 import 'package:microshaft/src/model/out_auth_xl_properties.dart';
 import 'package:microshaft/src/model/out_auth_xsts.dart';
@@ -32,21 +33,22 @@ class MicroshaftClient {
       storage.setExpiring("auth.token", s.expiresInSeconds!);
       return s.accessToken!;
     });
+    storage.flush();
     s.microsoftAccessToken = authToken;
     String xblToken = await storage.compute("auth.xbltoken", () async {
       InAuthXL s = await _Net.authenticateXBL(authToken);
-      storage.setExpiring(
-          "auth.xbltoken", int.tryParse(storage.get("auth.token.expires")!)!);
+      storage.set("auth.xbltoken.expires", storage.get("auth.token.expires")!);
       return s.token!;
     });
+    storage.flush();
     s.xblToken = xblToken;
     String xstsToken = await storage.compute("auth.xststoken", () async {
       InAuthXSTS s = await _Net.authenticateXSTS(xblToken, bedrock: false);
-      storage.setExpiring(
-          "auth.xststoken", int.tryParse(storage.get("auth.token.expires")!)!);
+      storage.set("auth.xststoken.expires", storage.get("auth.token.expires")!);
       storage.set("auth.uhs", s.getUserHash()!);
       return s.token!;
     });
+    storage.flush();
     s.xstsToken = xstsToken;
     s.userHash = storage.get("auth.uhs")!;
 
@@ -60,6 +62,19 @@ class MicroshaftClient {
     s.mojangToken = mojangToken;
     s.username = storage.get("mojang.username");
 
+    storage.flush();
+    String username = await storage.compute("user.name", () async {
+      InProfile pf = await _Net.getProfile(mojangToken);
+      storage.set("user.name", pf.name!);
+      storage.set("user.id", pf.id!);
+      storage.set("user.name", storage.get("auth.mojangtoken.expires")!);
+      return pf.name!;
+    });
+
+    s.profileName = username;
+    s.uuid = storage.get("user.id")!;
+    storage.flush();
+
     return s;
   }
 }
@@ -72,12 +87,20 @@ class FileStorage extends MemoryStorage {
   static FileStorage load(String path) {
     FileStorage f = FileStorage._();
     f._path = path;
-    File(path).readAsStringSync().split("\n").forEach((element) {
-      if (element.contains("=")) {
-        List<String> ff = element.split("=");
-        f.set(ff[0], ff[1]);
+
+    if (File(path).existsSync()) {
+      try {
+        File(path).readAsStringSync().split("\n").forEach((element) {
+          if (element.contains("=")) {
+            List<String> ff = element.split("=");
+            f.set(ff[0], ff[1]);
+          }
+        });
+      } catch (e, es) {
+        print(e);
+        print(es);
       }
-    });
+    }
 
     return f;
   }
@@ -178,7 +201,6 @@ class _Net {
     final Duration interval = Duration(seconds: code.intervalSeconds ?? 5);
     bool done = false;
     while (!done) {
-      print("<Waiting ${interval.inSeconds} Seconds>");
       await Future.delayed(interval);
 
       try {
@@ -222,6 +244,12 @@ class _Net {
                       rpsTicket: "d=$accessToken"))
               .toJson()))
       .then((value) => InAuthXL.fromJson(jsonDecode(value.body)));
+
+  static Future<InProfile> getProfile(String mojangToken) =>
+      http.get(Uri.parse('https://api.minecraftservices.com/minecraft/profile'),
+          headers: <String, String>{
+            'Authorization': 'Bearer $mojangToken',
+          }).then((value) => InProfile.fromJson(jsonDecode(value.body)));
 
   static Future<InMojang> authenticateMojang(
           {required String userHash, required String xstsToken}) =>

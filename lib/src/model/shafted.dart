@@ -11,6 +11,8 @@ class Shafted {
   String? mojangToken;
   String? username;
   String? userHash;
+  String? uuid;
+  String? profileName;
 
   Shafted();
 

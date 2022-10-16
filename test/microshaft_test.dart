@@ -9,7 +9,8 @@ void main() async {
     });
 
     test('First Test', () async {
-      MicroshaftClient client = MicroshaftClient(storage: MemoryStorage());
+      MicroshaftClient client =
+          MicroshaftClient(storage: FileStorage.load("tokens.txt"));
       await client.authenticate((url, code) {
         print("Go to $url");
         print("Enter: $code");

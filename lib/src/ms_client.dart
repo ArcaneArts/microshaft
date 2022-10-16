@@ -43,7 +43,7 @@ class _Net {
     final Duration interval = Duration(seconds: code.intervalSeconds ?? 5);
     bool done = false;
     while (!done) {
-      print("<Waiting $interval Seconds>");
+      print("<Waiting ${interval.inSeconds} Seconds>");
       await Future.delayed(interval);
 
       try {
@@ -77,7 +77,7 @@ class _Net {
       http
           .post(
               Uri.parse(
-                  'https://login.microsoftonline.com/common/oauth2/v2.0/token'),
+                  'https://login.microsoftonline.com/consumers/oauth2/v2.0/token'),
               headers: <String, String>{
                 'Content-Type': 'application/x-www-form-urlencoded',
               },
@@ -96,11 +96,11 @@ class _Net {
   static Future<InDeviceCode> getAuthCode(String clientId) => http
       .post(
         Uri.parse(
-            'https://login.microsoftonline.com/common/oauth2/v2.0/devicecode'),
+            'https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode'),
         headers: <String, String>{
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: "client_id=$clientId&scope=XboxLive.signin%20offline_access",
+        body: "client_id=$clientId&scope=XboxLive.signin",
       )
       .then((value) => InDeviceCode.fromJson(jsonDecode(value.body)));
 }

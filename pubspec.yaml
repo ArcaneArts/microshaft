@@ -1,11 +1,11 @@
 name: microshaft
 description: Get logged in to a minecraft account quickly without all of the boilerplate of dancing with microsoft, xbox and mojang servers, maintaining a cache for expiring tokens and whatnot.
-version: 1.0.0
+version: 1.0.1
 repository: https://github.com/cyberpwnn/microshaft
 environment:
-  sdk: '>=2.18.2 <3.0.0'
+  sdk: ^3.10.7
 dependencies:
-  http: ^0.13.5
+  http: ^1.6.0
   json_serializable: ^6.5.1
   json_annotation: ^4.7.0
 dev_dependencies:
